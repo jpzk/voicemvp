@@ -1,0 +1,15 @@
+# Audio processing
+PyAudio==0.2.14
+numpy==1.24.3
+scipy==1.11.3
+
+# Speech recognition
+transformers==4.36.2
+torch==2.1.2
+
+# LLM interaction
+langchain==0.1.0
+langchain-community==0.0.13
+
+# Text to speech
+kokoro==0.1.0  # Replace with actual version if different
