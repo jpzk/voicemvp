@@ -12,16 +12,21 @@ Hacked together with Claude and Cursor.
    cd voicemvp
    ```
 
-2. Install dependencies:
+2. Install system dependencies (macOS):
+   ```bash
+   brew install portaudio
+   ```
+
+3. Install dependencies:
    ```bash
    python -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    ```
 
-3. Run the application:
+4. Run the application:
    ```bash
    python voice_chat_agent.py
    ```
 
-4. The first run might take a while as it needs to download the models.
+5. The first run might take a while as it needs to download the models.
