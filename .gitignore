@@ -1,0 +1,43 @@
+# Environment files
+.env
+.env.local
+.env.*
+
+recorded_audio.wav
+
+# Cache files
+__pycache__/
+*.py[cod]
+.cache/
+.pytest_cache/
+*.cache
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+venv/
+env/
+.virtualenv/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
