@@ -11,17 +11,47 @@ class LLMThinker:
             streaming=True
         )
         
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful AI assistant. Keep responses natural and concise."),
-            ("human", "{input}")
-        ])
+        # Initialize conversation history
+        self.conversation_history = []
+        
+        # System prompt remains constant
+        self.system_prompt = """You are a helpful AI assistant engaging in natural conversation. 
+        Your responses should be casual and conversational, suitable for being read aloud.
+        Avoid using markdown, special formatting, or structured lists.
+        Keep responses flowing naturally as if speaking to a friend.
+        Use conversation history to maintain context and have a more natural dialogue.
+        Phrase things in a way that sounds natural when spoken."""
         print("LLM ready!")
 
     def get_response(self, text):
         print("\nThinking...")
-        chain = self.prompt | self.chat
+        
+        # Build messages list starting with system prompt
+        messages = [("system", self.system_prompt)]
+        
+        # Add conversation history
+        for message in self.conversation_history:
+            messages.append(message)
+            
+        # Add current user input
+        messages.append(("human", text))
+        
+        # Create prompt template with all messages
+        prompt = ChatPromptTemplate.from_messages(messages)
+        
+        # Get response
+        chain = prompt | self.chat
         response = chain.invoke({"input": text})
         cleaned = ' '.join(response.content.replace('\n', ' ').split())
+        
+        # Store the exchange in conversation history
+        self.conversation_history.append(("human", text))
+        self.conversation_history.append(("assistant", cleaned))
+        
+        # Keep only last 10 exchanges (20 messages) to prevent context from growing too large
+        if len(self.conversation_history) > 20:
+            self.conversation_history = self.conversation_history[-20:]
+            
         print(f"Assistant: {cleaned}")
         return cleaned
 
