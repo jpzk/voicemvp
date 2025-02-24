@@ -1,5 +1,8 @@
 from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.memory import ConversationBufferMemory
+from langchain.tools import Tool
 
 class LLMThinker:
     def __init__(self):
@@ -11,8 +14,11 @@ class LLMThinker:
             streaming=True
         )
         
-        # Initialize conversation history
-        self.conversation_history = []
+        # Initialize conversation memory
+        self.memory = ConversationBufferMemory(
+            memory_key="chat_history",
+            return_messages=True
+        )
         
         # System prompt remains constant
         self.system_prompt = """You are a helpful AI assistant engaging in natural conversation. 
@@ -21,36 +27,29 @@ class LLMThinker:
         Keep responses flowing naturally as if speaking to a friend.
         Use conversation history to maintain context and have a more natural dialogue.
         Phrase things in a way that sounds natural when spoken."""
+        
+        # Create the agent with tools (empty list for now, can be extended later)
+        tools = []
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", f"{self.system_prompt}\nPrevious conversation:\n{{chat_history}}"),
+            ("human", "{input}")
+        ])
+        
+        self.agent = create_react_agent(self.chat, tools, prompt)
+        self.agent_executor = AgentExecutor(
+            agent=self.agent,
+            tools=tools,
+            memory=self.memory,
+            verbose=True
+        )
         print("LLM ready!")
 
     def get_response(self, text):
         print("\nThinking...")
         
-        # Build messages list starting with system prompt
-        messages = [("system", self.system_prompt)]
-        
-        # Add conversation history
-        for message in self.conversation_history:
-            messages.append(message)
-            
-        # Add current user input
-        messages.append(("human", text))
-        
-        # Create prompt template with all messages
-        prompt = ChatPromptTemplate.from_messages(messages)
-        
-        # Get response
-        chain = prompt | self.chat
-        response = chain.invoke({"input": text})
-        cleaned = ' '.join(response.content.replace('\n', ' ').split())
-        
-        # Store the exchange in conversation history
-        self.conversation_history.append(("human", text))
-        self.conversation_history.append(("assistant", cleaned))
-        
-        # Keep only last 10 exchanges (20 messages) to prevent context from growing too large
-        if len(self.conversation_history) > 20:
-            self.conversation_history = self.conversation_history[-20:]
+        # Get response using agent executor
+        response = self.agent_executor.invoke({"input": text})
+        cleaned = ' '.join(response['output'].replace('\n', ' ').split())
             
         print(f"Assistant: {cleaned}")
         return cleaned
