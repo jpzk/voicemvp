@@ -3,6 +3,10 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.memory import ConversationBufferMemory
 from langchain.tools import Tool
+from langchain_community.utilities import (
+    WikipediaAPIWrapper,
+    DuckDuckGoSearchAPIWrapper
+)
 
 class LLMThinker:
     def __init__(self):
@@ -21,17 +25,51 @@ class LLMThinker:
         )
         
         # System prompt remains constant
-        self.system_prompt = """You are a helpful AI assistant engaging in natural conversation. 
-        Your responses should be casual and conversational, suitable for being read aloud.
+        self.system_prompt = """You are a helpful AI assistant engaging in natural \
+        conversation. 
+        Your responses should be casual and conversational, suitable for being read \
+        aloud.
         Avoid using markdown, special formatting, or structured lists.
         Keep responses flowing naturally as if speaking to a friend.
         Use conversation history to maintain context and have a more natural dialogue.
-        Phrase things in a way that sounds natural when spoken."""
+        Phrase things in a way that sounds natural when spoken.
         
-        # Create the agent with tools (empty list for now, can be extended later)
-        tools = []
+        For information retrieval:
+        - Use the Wikipedia tool for facts, historical information, and general \
+        knowledge
+        - Use the DuckDuckGo tool for recent events, news, and current information
+        Always summarize the information in a conversational way."""
+        
+        # Create the agent with Wikipedia and DuckDuckGo tools
+        wikipedia = WikipediaAPIWrapper()
+        search = DuckDuckGoSearchAPIWrapper()
+        
+        tools = [
+            Tool(
+                name="Wikipedia",
+                func=wikipedia.run,
+                description=(
+                    "Use this tool for searching facts, historical information, and "
+                    "general knowledge. Input should be a search query. Returns "
+                    "detailed information from Wikipedia articles."
+                ),
+                return_direct=False
+            ),
+            Tool(
+                name="DuckDuckGo",
+                func=search.run,
+                description=(
+                    "Use this tool for searching recent events, news, and current "
+                    "information. Input should be a search query. Returns real-time "
+                    "search results from the web."
+                ),
+                return_direct=False
+            )
+        ]
+        
         prompt = ChatPromptTemplate.from_messages([
-            ("system", f"{self.system_prompt}\nPrevious conversation:\n{{chat_history}}"),
+            ("system", self.system_prompt),
+            ("system", "Previous conversation:\n{chat_history}"),
             ("human", "{input}")
         ])
         
