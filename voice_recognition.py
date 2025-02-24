@@ -1,4 +1,4 @@
-import pyaudio
+import sounddevice as sd
 import numpy as np
 import time
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
@@ -6,18 +6,13 @@ import torch
 from scipy.io import wavfile
 
 def list_audio_devices():
-    p = pyaudio.PyAudio()
-    info = p.get_host_api_info_by_index(0)
-    num_devices = info.get('deviceCount')
-    
+    devices = sd.query_devices()
     print("\nAvailable input devices:")
     input_devices = []
-    for i in range(num_devices):
-        device_info = p.get_device_info_by_index(i)
-        if device_info.get('maxInputChannels') > 0:
-            print(f"{i}: {device_info.get('name')} (inputs: {device_info.get('maxInputChannels')})")
+    for i, device in enumerate(devices):
+        if device['max_input_channels'] > 0:
+            print(f"{i}: {device['name']} (inputs: {device['max_input_channels']})")
             input_devices.append(i)
-    p.terminate()
     return input_devices
 
 def select_audio_device():
@@ -47,15 +42,13 @@ class VoiceRecognizer:
         self.silence_threshold = silence_threshold
         self.silence_duration = silence_duration
         self.chunk_size = 1024
-        self.audio_format = pyaudio.paFloat32
         self.channels = 1
         self.is_recording = False
         
-        # Initialize PyAudio
-        self.p = pyaudio.PyAudio()
         if self.device_id is not None:
-            device_info = self.p.get_device_info_by_index(self.device_id)
-            print(f"\nUsing selected input device: {device_info.get('name')}")
+            device_info = sd.query_devices(self.device_id)
+            print(f"\nUsing selected input device: {device_info['name']}")
+            sd.default.device = self.device_id
         else:
             print("\nUsing default input device")
 
@@ -71,55 +64,54 @@ class VoiceRecognizer:
         print("\nListening... (speak now)")
         print("Volume level: ", end="", flush=True)
         
-        # Open stream in blocking mode
-        stream = self.p.open(
-            format=self.audio_format,
-            channels=self.channels,
-            rate=self.sample_rate,
-            input=True,
-            input_device_index=self.device_id,
-            frames_per_buffer=self.chunk_size
-        )
-        
         audio_data = []
         silence_start = None
         self.is_recording = True
         recording_started = False
         
+        def audio_callback(indata, frames, time, status):
+            if status:
+                print(f'Error: {status}')
+            audio_chunk = indata[:, 0]  # Get first channel
+            volume = np.abs(audio_chunk).mean()
+            
+            # Print volume indicator
+            if volume > self.silence_threshold:
+                print("█", end="", flush=True)
+                nonlocal recording_started
+                recording_started = True
+                nonlocal silence_start
+                silence_start = None
+            else:
+                print(".", end="", flush=True)
+                if not recording_started:
+                    return  # Wait for voice to start recording
+                
+                nonlocal silence_start
+                if silence_start is None:
+                    silence_start = time.time()
+                elif time.time() - silence_start >= self.silence_duration:
+                    self.is_recording = False
+                    raise sd.CallbackStop()
+            
+            # Only store audio data if we've started recording
+            if recording_started:
+                audio_data.append(audio_chunk)
+
         try:
-            while self.is_recording:
-                # Read chunk of audio data
-                data = stream.read(self.chunk_size, exception_on_overflow=False)
-                audio_chunk = np.frombuffer(data, dtype=np.float32)
-                
-                # Calculate volume
-                volume = np.abs(audio_chunk).mean()
-                
-                # Print volume indicator
-                if volume > self.silence_threshold:
-                    print("█", end="", flush=True)
-                    recording_started = True
-                    silence_start = None
-                else:
-                    print(".", end="", flush=True)
-                    if not recording_started:
-                        continue  # Wait for voice to start recording
-                    
-                    if silence_start is None:
-                        silence_start = time.time()
-                    elif time.time() - silence_start >= self.silence_duration:
-                        print("\nSilence detected, processing speech...")
-                        break
-                
-                # Only store audio data if we've started recording
-                if recording_started:
-                    audio_data.append(audio_chunk)
+            with sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=self.channels,
+                dtype=np.float32,
+                blocksize=self.chunk_size,
+                callback=audio_callback
+            ):
+                while self.is_recording:
+                    sd.sleep(100)  # Sleep to prevent busy-waiting
+                print("\nSilence detected, processing speech...")
                 
         except KeyboardInterrupt:
             print("\nStopping recording...")
-        finally:
-            stream.stop_stream()
-            stream.close()
         
         if not audio_data:
             print("\nNo audio recorded!")
@@ -165,8 +157,7 @@ class VoiceRecognizer:
         return transcription.strip()
 
     def cleanup(self):
-        if hasattr(self, 'p'):
-            self.p.terminate()
+        pass  # No cleanup needed for sounddevice
 
 if __name__ == "__main__":
     # Example usage
