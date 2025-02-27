@@ -1,183 +1,198 @@
-import sounddevice as sd
+import sys
+from typing import Optional
 import numpy as np
-import time
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 import torch
-from scipy.io import wavfile
+from pvrecorder import PvRecorder
+import logging
 
-def list_audio_devices():
-    devices = sd.query_devices()
-    print("\nAvailable input devices:")
-    input_devices = []
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def select_audio_device() -> int:
+    """Select an audio device and return its index."""
+    devices = PvRecorder.get_available_devices()
+    print("\nAvailable audio devices:")
     for i, device in enumerate(devices):
-        if device['max_input_channels'] > 0:
-            print(f"{i}: {device['name']} (inputs: {device['max_input_channels']})")
-            input_devices.append(i)
-    return input_devices
-
-def select_audio_device():
-    input_devices = list_audio_devices()
-    while True:
-        try:
-            device_id = input("\nEnter the number of the input device to use (or press Enter for default): ").strip()
-            if not device_id:
-                return None
-            device_id = int(device_id)
-            if device_id in input_devices:
-                return device_id
-            print("Invalid device number. Please try again.")
-        except ValueError:
-            print("Please enter a valid number.")
+        print(f"{i}: {device}")
+    
+    device_id = -1  # Default device
+    try:
+        selection = input("\nEnter device number (press Enter for default): ").strip()
+        if selection and 0 <= int(selection) < len(devices):
+            device_id = int(selection)
+    except (ValueError, EOFError):
+        pass
+    
+    return device_id
 
 class VoiceRecognizer:
-    def __init__(self, silence_threshold=0.01, silence_duration=2, device_id=None):
+    def __init__(self, device_id: int = -1, frame_length: int = 512):
         self.device_id = device_id
-        print("\nInitializing Voice Recognition...")
-        self.setup_audio_recording(silence_threshold, silence_duration)
-        self.setup_whisper()
-        print("Voice Recognition initialization complete!")
+        self.frame_length = frame_length
+        self.sample_rate = 16000  # Required by Whisper
+        self.recorder = None
         
-    def setup_audio_recording(self, silence_threshold, silence_duration):
-        self.sample_rate = 16000  # Whisper expects 16kHz
-        self.silence_threshold = silence_threshold
-        self.silence_duration = silence_duration
-        self.chunk_size = 1024
-        self.channels = 1
-        self.is_recording = False
+        logging.info("Initializing Voice Recognition...")
+        self._setup_recorder()
+        self._setup_whisper()
         
-        if self.device_id is not None:
-            device_info = sd.query_devices(self.device_id)
-            print(f"\nUsing selected input device: {device_info['name']}")
-            sd.default.device = self.device_id
-        else:
-            print("\nUsing default input device")
+    def _setup_recorder(self) -> None:
+        try:
+            self.recorder = PvRecorder(device_index=self.device_id, frame_length=self.frame_length)
+            device_name = PvRecorder.get_available_devices()[self.device_id]
+            logging.info(f"Using audio device: {device_name}")
+        except Exception as e:
+            logging.error(f"Error setting up recorder: {e}")
+            raise
 
-    def setup_whisper(self):
-        print("Loading Whisper model...")
-        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
-        self.model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
-        if torch.cuda.is_available():
-            self.model = self.model.to("cuda")
-        print("Whisper model loaded!")
+    def _setup_whisper(self) -> None:
+        logging.info("Loading Whisper model...")
+        try:
+            self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
+            self.model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
+            if torch.cuda.is_available():
+                self.model = self.model.to("cuda")
+                logging.info("Using CUDA for inference")
+        except Exception as e:
+            logging.error(f"Error loading Whisper model: {e}")
+            raise
 
-    def record_audio(self):
-        print("\nListening... (speak now)")
-        print("Volume level: ", end="", flush=True)
-        
+    @staticmethod
+    def list_audio_devices():
+        devices = PvRecorder.get_available_devices()
+        print("\nAvailable audio devices:")
+        for i, device in enumerate(devices):
+            print(f"{i}: {device}")
+        return devices
+
+    def record_audio(self, voice_threshold: float = 150, silence_threshold: float = 140, silence_duration: float = 2.0) -> Optional[np.ndarray]:
+        if not self.recorder:
+            logging.error("Recorder not initialized")
+            return None
+
         audio_data = []
-        silence_start = None
-        self.is_recording = True
-        recording_started = False
-        
-        def audio_callback(indata, frames, time, status):
-            if status:
-                print(f'Error: {status}')
-            audio_chunk = indata[:, 0]  # Get first channel
-            volume = np.abs(audio_chunk).mean()
-            
-            # Print volume indicator
-            if volume > self.silence_threshold:
-                print("█", end="", flush=True)
-                nonlocal recording_started
-                recording_started = True
-                nonlocal silence_start
-                silence_start = None
-            else:
-                print(".", end="", flush=True)
-                if not recording_started:
-                    return  # Wait for voice to start recording
-                
-                nonlocal silence_start
-                if silence_start is None:
-                    silence_start = time.time()
-                elif time.time() - silence_start >= self.silence_duration:
-                    self.is_recording = False
-                    raise sd.CallbackStop()
-            
-            # Only store audio data if we've started recording
-            if recording_started:
-                audio_data.append(audio_chunk)
+        silence_count = 0
+        max_silence_count = int(silence_duration * self.sample_rate / self.frame_length)
+        voice_detected = False
 
         try:
-            with sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                dtype=np.float32,
-                blocksize=self.chunk_size,
-                callback=audio_callback
-            ):
-                while self.is_recording:
-                    sd.sleep(100)  # Sleep to prevent busy-waiting
-                print("\nSilence detected, processing speech...")
-                
-        except KeyboardInterrupt:
-            print("\nStopping recording...")
-        
+            self.recorder.start()
+            logging.info("Waiting for voice...")
+            
+            while True:
+                try:
+                    frame = self.recorder.read()
+                    volume = np.abs(np.array(frame, dtype=np.int16)).mean()
+                    
+                    # Wait for voice to start recording
+                    if not voice_detected:
+                        print("." if volume < voice_threshold else "!", end="", flush=True)
+                        if volume > voice_threshold:
+                            voice_detected = True
+                            print("\nVoice detected, recording...")
+                        continue
+                    
+                    # Once voice is detected, start recording
+                    audio_data.extend(frame)
+                    print("█" if volume > silence_threshold else ".", end="", flush=True)
+                    
+                    # Silence detection after voice
+                    if volume < silence_threshold:
+                        silence_count += 1
+                        if silence_count >= max_silence_count:
+                            print("\nSilence detected, stopping...")
+                            break
+                    else:
+                        silence_count = 0
+                        
+                except (KeyboardInterrupt, EOFError):
+                    print("\nRecording interrupted...")
+                    sys.exit()
+                    return None
+
+        finally:
+            try:
+                self.recorder.stop()
+            except:
+                pass
+
         if not audio_data:
-            print("\nNo audio recorded!")
+            logging.warning("No audio recorded")
             return None
-        
-        # Combine all audio chunks
-        audio_data = np.concatenate(audio_data)
-        
-        # Save the audio file
-        wavfile.write("recorded_audio.wav", self.sample_rate, audio_data)
-        print(f"\nRecorded {len(audio_data)} samples")
-        
-        return audio_data
 
-    def transcribe_audio(self, audio_data):
-        # Normalize audio data
-        audio_data = audio_data.astype(np.float32)
-        audio_data = audio_data / np.max(np.abs(audio_data))
+        return np.array(audio_data, dtype=np.float32) / 32768.0  # Convert to float32 [-1.0, 1.0]
 
-        # Process audio with Whisper
-        input_features = self.processor(
-            audio_data, 
-            sampling_rate=self.sample_rate,
-            return_tensors="pt"
-        ).input_features
+    def transcribe_audio(self, audio_data: np.ndarray) -> str:
+        try:
+            input_features = self.processor(
+                audio_data, 
+                sampling_rate=self.sample_rate,
+                return_tensors="pt"
+            ).input_features
 
-        if torch.cuda.is_available():
-            input_features = input_features.to("cuda")
+            if torch.cuda.is_available():
+                input_features = input_features.to("cuda")
 
-        # Generate token ids
-        predicted_ids = self.model.generate(
-            input_features,
-            language="<|en|>",
-            task="transcribe"
-        )
-        
-        # Decode the token ids to text
-        transcription = self.processor.batch_decode(
-            predicted_ids, 
-            skip_special_tokens=True
-        )[0]
-
-        return transcription.strip()
+            predicted_ids = self.model.generate(
+                input_features,
+                language="en",  # Force English language
+                task="transcribe"  # Ensure we're doing transcription
+            )
+            return self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
+        except Exception as e:
+            logging.error(f"Error during transcription: {e}")
+            return ""
 
     def cleanup(self):
-        pass  # No cleanup needed for sounddevice
+        if self.recorder:
+            self.recorder.delete()
+
+def main():
+    recognizer = None
+    try:
+        # List available devices and get user selection
+        devices = VoiceRecognizer.list_audio_devices()
+        device_id = -1  # Default device
+        
+        try:
+            selection = input("\nEnter device number (press Enter for default): ").strip()
+            if selection and 0 <= int(selection) < len(devices):
+                device_id = int(selection)
+        except (ValueError, EOFError):
+            pass
+
+        # Initialize recognizer
+        recognizer = VoiceRecognizer(device_id=device_id)
+        
+        print("\nCommands:")
+        print("- Speak to transcribe")
+        print("- Say 'quit', 'exit', 'goodbye', or 'bye' to end")
+        print("- Press Ctrl+C or Ctrl+D to stop\n")
+        
+        while True:
+            try:
+                audio_data = recognizer.record_audio()
+                if audio_data is not None:
+                    text = recognizer.transcribe_audio(audio_data)
+                    print(f"\nTranscribed: {text}")
+                    
+                    if text.lower() in {'quit', 'exit', 'goodbye', 'bye'}:
+                        break
+            except KeyboardInterrupt:
+                print("\nStopping...")
+                break
+            except EOFError:
+                print("\nReceived EOF, stopping...")
+                break
+
+    except (KeyboardInterrupt, EOFError):
+        print("\nProgram terminated by user")
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+    finally:
+        if recognizer:
+            recognizer.cleanup()
+            logging.info("Cleanup complete")
 
 if __name__ == "__main__":
-    # Example usage
-    device_id = select_audio_device()
-    recognizer = VoiceRecognizer(
-        silence_threshold=0.002,
-        silence_duration=1.0,
-        device_id=device_id
-    )
-    
-    try:
-        while True:
-            audio_data = recognizer.record_audio()
-            if audio_data is not None:
-                text = recognizer.transcribe_audio(audio_data)
-                print(f"\nTranscribed text: {text}")
-                
-                if text.lower() in ['quit', 'exit', 'goodbye', 'bye']:
-                    break
-    except KeyboardInterrupt:
-        print("\nExiting...")
-    finally:
-        recognizer.cleanup() 
+    main() 

@@ -3,9 +3,9 @@ from llm_thinking import LLMThinker
 from text_to_speech import TTSGenerator
 
 class VoiceAgent:
-    def __init__(self, silence_threshold=0.10, silence_duration=2, device_id=1):
+    def __init__(self, device_id=1):
         print("\nInitializing Voice Chat Agent...")
-        self.recognizer = VoiceRecognizer(silence_threshold, silence_duration, device_id)
+        self.recognizer = VoiceRecognizer(device_id)
         self.thinker = LLMThinker()
         self.tts = TTSGenerator(default_voice='af_heart')
         print("Voice Chat Agent initialization complete!")
@@ -21,7 +21,6 @@ class VoiceAgent:
         print("\nVoice Chat Agent ready! Press Ctrl+C to exit")
         print("Make sure LM Studio is running and the API is active!")
         print("Speak clearly into your microphone. You should see █ when voice is detected.")
-        print("Current silence threshold:", self.recognizer.silence_threshold)
         
         try:
             while True:
@@ -67,8 +66,6 @@ def main():
     device_id = select_audio_device()
     
     agent = VoiceAgent(
-        silence_threshold=0.002,  # Very sensitive
-        silence_duration=1.0,     # Short silence duration
         device_id=device_id       # Selected device
     )
     agent.chat_loop()

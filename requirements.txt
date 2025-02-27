@@ -17,3 +17,7 @@ langchain-community>=0.0.13
 # Text to speech
 kokoro>=0.7.16  # Kokoro TTS library for voice generation
 openai>=1.6.1  # Required for Whisper model
+
+# Information retrieval tools
+wikipedia>=1.4.0  # For Wikipedia API access
+duckduckgo-search>=4.1.1  # For DuckDuckGo search capability
