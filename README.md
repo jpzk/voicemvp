@@ -1,6 +1,6 @@
-# Local Voice Chat MVP
+# Local Llama 3.1 Voice Chat MVP with Tool-use and Memory
 
-A voice-based chat application that allows users to interact with an AI assistant using speech. The application leverages OpenAI's [Whisper small](https://huggingface.co/openai/whisper-small) for accurate speech recognition and [Kokoro-TTS](https://huggingface.co/hexgrad/Kokoro-82M) for natural-sounding voice synthesis. It will use the [LM Studio local model](https://lms.dev/) that needs to be served at http://localhost:1234 to generate responses. Works great/responsive with qwen2.5-7b-instruct on Mac M1 Pro. Deepseek R1 also works but is much slower.
+A voice-based chat application that allows users to interact with an AI assistant using speech. The application leverages OpenAI's [Whisper small](https://huggingface.co/openai/whisper-small) for accurate speech recognition and [Kokoro-TTS](https://huggingface.co/hexgrad/Kokoro-82M) for natural-sounding voice synthesis. It will use the [LM Studio local model](https://lms.dev/) that needs to be served at http://localhost:1234 to generate response. Requires meta-llama-3.1-8b-instruct for tool-use. Works great on Macbook M1 Pro. 
 
 Hacked together with Claude and Cursor. 
 

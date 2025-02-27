@@ -21,3 +21,5 @@ openai>=1.6.1  # Required for Whisper model
 # Information retrieval tools
 wikipedia>=1.4.0  # For Wikipedia API access
 duckduckgo-search>=4.1.1  # For DuckDuckGo search capability
+
+pvrecorder==1.2.5
