@@ -51,7 +51,7 @@ class VoiceRecognizer:
             self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
             self.model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
             if torch.cuda.is_available():
-                self.model = self.model.to("cuda")
+                self.model = self.model.to(torch.device("cuda"))
                 logging.info("Using CUDA for inference")
         except Exception as e:
             logging.error(f"Error loading Whisper model: {e}")
@@ -124,21 +124,35 @@ class VoiceRecognizer:
 
     def transcribe_audio(self, audio_data: np.ndarray) -> str:
         try:
-            input_features = self.processor(
+            # Process audio with proper attention mask
+            features = self.processor(
                 audio_data, 
                 sampling_rate=self.sample_rate,
-                return_tensors="pt"
-            ).input_features
+                return_tensors="pt",
+                return_attention_mask=True  # Explicitly request attention mask
+            )
+            
+            input_features = features.input_features
+            attention_mask = features.attention_mask if hasattr(features, 'attention_mask') else None
 
             if torch.cuda.is_available():
-                input_features = input_features.to("cuda")
+                input_features = input_features.to(torch.device("cuda"))
+                if attention_mask is not None:
+                    attention_mask = attention_mask.to(torch.device("cuda"))
 
+            # Generate without conflicting parameters
             predicted_ids = self.model.generate(
                 input_features,
+                attention_mask=attention_mask,
                 language="en",  # Force English language
-                task="transcribe"  # Ensure we're doing transcription
+                task="transcribe",  # Ensure we're doing transcription
+                # Don't set forced_decoder_ids as it conflicts with task
             )
-            return self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
+            
+            return self.processor.batch_decode(
+                predicted_ids, 
+                skip_special_tokens=True
+            )[0].strip()
         except Exception as e:
             logging.error(f"Error during transcription: {e}")
             return ""

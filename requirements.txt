@@ -12,6 +12,7 @@ torch>=2.1.2
 # LLM interaction
 langchain>=0.1.0
 langchain-community>=0.0.13
+langchain-openai>=0.0.2
 # Note: LM Studio needs to be running locally on port 1234
 
 # Text to speech

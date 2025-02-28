@@ -1,18 +1,43 @@
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.tools import Tool
-from langchain.utilities import WikipediaAPIWrapper, DuckDuckGoSearchAPIWrapper
+from langchain_community.utilities import WikipediaAPIWrapper
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain.agents import initialize_agent, AgentType
+
+def get_openai_client():
+    """
+    Returns a ChatOpenAI instance configured with environment variables if OPENAI_API_KEY
+    is present, otherwise uses local parameters.
+    
+    Returns:
+        ChatOpenAI: Configured OpenAI client
+    """
+    import os
+   
+    # Check if OPENAI_API_KEY exists in environment
+    api_key = os.environ.get("OPENAI_API_KEY")
+    
+    if api_key:
+        # Use API key from environment variables
+        print("Using OpenAI API with key from environment variables")
+        return ChatOpenAI(
+            model="gpt-3.5-turbo",
+            api_key=api_key
+        )
+    else:
+        # Use local parameters as before
+        print("Using local OpenAI parameters")
+        return ChatOpenAI(
+            base_url="http://192.168.1.6:1234/v1",
+            model="meta-llama-3.1-8b-instruct",
+            api_key="your-api-key-here"  # Replace with your actual local key if needed
+        )
 
 class LLMThinker:
     def __init__(self):
         print("Initializing LLM...")
-        self.chat = ChatOpenAI(
-            model_name="meta-llama-3.1-8b-instruct",
-            openai_api_base="http://192.168.1.6:1234/v1",
-            openai_api_key="not-needed",
-            streaming=True
-        )
+        self.chat = get_openai_client()
         
         # Initialize conversation memory
         self.memory = ConversationBufferMemory(
@@ -21,7 +46,7 @@ class LLMThinker:
         )
         
         # Create tools
-        wikipedia = WikipediaAPIWrapper()
+        wikipedia = WikipediaAPIWrapper(wiki_client=None)
         search = DuckDuckGoSearchAPIWrapper()
         
         tools = [
