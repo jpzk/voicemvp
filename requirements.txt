@@ -12,6 +12,7 @@ torch>=2.1.2
 # LLM interaction
 langchain>=0.1.0
 langchain-community>=0.0.13
+langchain-openai>=0.0.2
 # Note: LM Studio needs to be running locally on port 1234
 
 # Text to speech
@@ -23,3 +24,16 @@ wikipedia>=1.4.0  # For Wikipedia API access
 duckduckgo-search>=4.1.1  # For DuckDuckGo search capability
 
 pvrecorder==1.2.5
+
+# RAG system dependencies
+sentence-transformers>=2.2.2  # For embeddings
+chromadb>=0.4.18  # Vector database
+pydantic>=2.0.0  # Data validation
+requests>=2.31.0  # For API requests
+
+# Document processing
+unstructured>=0.10.30  # For parsing various document formats
+markdown>=3.4.3  # For markdown support
+python-magic>=0.4.27  # For file type detection
+nltk>=3.8.1  # For text processing
+tqdm>=4.66.1  # For progress bars

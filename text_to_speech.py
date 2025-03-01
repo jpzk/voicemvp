@@ -2,14 +2,19 @@ import torch
 from kokoro import KModel, KPipeline
 import sounddevice as sd
 import numpy as np
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('text_to_speech')
 
 class TTSGenerator:
     def __init__(self, default_voice='af_heart'):
-        print("Initializing TTS...")
+        logger.info("Initializing TTS...")
         self.model = KModel().to('cpu').eval()
         self.pipeline = KPipeline(lang_code='a', model=False)
         self.voice_pack = self.pipeline.load_voice(default_voice)
-        print("TTS ready!")
+        logger.info("TTS ready!")
     
     def generate_speech(self, text):
         try:
@@ -28,11 +33,3 @@ class TTSGenerator:
 def create_tts_generator():
     """Create and return a TTSGenerator instance."""
     return TTSGenerator()
-
-if __name__ == "__main__":
-    # Example usage
-    tts = TTSGenerator()
-    try:
-        tts.generate_speech("Hello, this is a test of the text to speech system.")
-    finally:
-        tts.cleanup() 

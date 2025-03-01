@@ -1,17 +1,33 @@
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.tools import Tool
-from langchain.utilities import WikipediaAPIWrapper, DuckDuckGoSearchAPIWrapper
+from langchain_community.utilities import WikipediaAPIWrapper
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain.agents import initialize_agent, AgentType
+import logging
+
+from pydantic import SecretStr
+from rag_system import RAGSystem
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('llm_thinking')
+
+def get_openai_client(base_url):
+    import os
+    logger.info(f"Using local LLM server at {base_url}")
+    return ChatOpenAI(
+        base_url=base_url,
+        model="meta-llama-3.1-8b-instruct",
+        api_key=SecretStr("not-needed")
+    )
 
 class LLMThinker:
-    def __init__(self):
-        print("Initializing LLM...")
+    def __init__(self, llm_server, rag_directory=None, use_rag=True):
+        logger.info("Initializing LLM...")
         self.chat = ChatOpenAI(
-            model_name="meta-llama-3.1-8b-instruct",
-            openai_api_base="http://192.168.1.6:1234/v1",
-            openai_api_key="not-needed",
-            streaming=True
+            base_url=llm_server,
+            model="meta-llama-3.1-8b-instruct",
+            api_key=SecretStr("not-needed")
         )
         
         # Initialize conversation memory
@@ -20,8 +36,8 @@ class LLMThinker:
             return_messages=True
         )
         
-        # Create tools
-        wikipedia = WikipediaAPIWrapper()
+        # Create standard tools
+        wikipedia = WikipediaAPIWrapper(wiki_client=None)
         search = DuckDuckGoSearchAPIWrapper()
         
         tools = [
@@ -37,6 +53,17 @@ class LLMThinker:
             )
         ]
         
+        # Add RAG tool if enabled
+        if use_rag:
+            try:
+                logger.info(f"Initializing RAG system from {rag_directory}")
+                self.rag_system = RAGSystem(base_url=llm_server, vectorstore=rag_directory)
+                rag_tool = self.rag_system.get_retrieval_tool()
+                tools.append(rag_tool)
+                logger.info("RAG system initialized and tool added")
+            except Exception as e:
+                logger.error(f"Failed to initialize RAG system: {e}")
+        
         # Initialize the agent with a simpler setup
         self.agent_executor = initialize_agent(
             tools=tools,
@@ -47,25 +74,16 @@ class LLMThinker:
             handle_parsing_errors=True,
             max_iterations=3
         )
-        print("LLM ready!")
+        logger.info("LLM ready!")
 
     def get_response(self, text):
-        print("\nThinking...")
+        logger.info("Thinking...")
         try:
             response = self.agent_executor.invoke({"input": text})
             cleaned = ' '.join(response['output'].replace('\n', ' ').split())
-            print(f"Assistant: {cleaned}")
+            logger.info(f"Response: {cleaned[:100]}...")
             return cleaned
         except Exception as e:
+            logger.error(f"Error getting response: {e}")
             error_msg = "I apologize, but I encountered an error. Could you rephrase your question?"
-            print(f"Assistant: {error_msg}")
             return error_msg
-
-if __name__ == "__main__":
-    # Example usage
-    thinker = LLMThinker()
-    while True:
-        user_input = input("\nEnter your message (or 'quit' to exit): ")
-        if user_input.lower() in ['quit', 'exit', 'goodbye', 'bye']:
-            break
-        response = thinker.get_response(user_input) 
